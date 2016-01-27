@@ -7,8 +7,9 @@ library(pROC)
 library(Ckmeans.1d.dp)
 
 # set wd to be kaggle folder
-train <- read.csv('/Users/zhugejunwei/Documents/Semester 2/DM/Final Project/data/train_users_2.csv', stringsAsFactors = FALSE)
-test <- read.csv('/Users/zhugejunwei/Documents/Semester 2/DM/Final Project/data/test_users.csv', stringsAsFactors = FALSE)
+setwd('/Users/zhugejunwei/Documents/Semester 2/DM/Airbnb Project/R project')
+train <- read.csv('/Users/zhugejunwei/Documents/Semester 2/DM/Airbnb Project/data/train_users_2.csv', stringsAsFactors = FALSE)
+test <- read.csv('/Users/zhugejunwei/Documents/Semester 2/DM/Airbnb Project/data/test_users.csv', stringsAsFactors = FALSE)
 # clean the training data
 labels <- train$country_destination
 labelInd <- which(colnames(train) == "country_destination")
@@ -55,17 +56,17 @@ dummies <- dummyVars(~ gender + signup_method + signup_flow + language +
 featuresInDummies <- as.data.frame(predict(dummies, newdata = dataAll))
 dataAll <- cbind(dataAll[,-c(which(colnames(dataAll) %in% featuresToDummies))], featuresInDummies)
 
-dataTrain <- dataAll[which(dataAll$id %in% train$id), ] # get the train set
+dataTrain <- dataAll[which(dataAll$id %in% train$id), ] # separate the train set
+dataTest <- dataAll[-which(dataAll$id %in% train$id), ] # separate the test set
 set.seed(1)
 modelTrainInd <- runif(dim(dataTrain)[1]) # generates random deviates
-modelTrain <- dataAll[which(modelTrainInd < 0.7), ] 
-modelTest <- dataAll[which(modelTrainInd >= 0.7), ]
+modelTrain <- dataTrain[which(modelTrainInd < 0.7), ] # training set
+modelvali <- dataTrain[which(modelTrainInd >= 0.7), ] # validation set
 
 lableTrain <- recode(labels, "'NDF'=0; 'US'=1; 'other'=2; 'FR'=3; 'CA'=4; 
                      'GB'=5; 'ES'=6; 'IT'=7; 'PT'=8; 'NL'=9; 'DE'=10; 
-                     'AU'=11")
-modelTrainLabel <- lableTrain[which(modelTrainInd < 0.7)]
-
+                     'AU'=11") # train set label
+modelTrainLabel <- lableTrain[which(modelTrainInd < 0.7)] # Training set label
 
 # train xgboost (multi class)
 xgb<- xgboost(data = data.matrix(modelTrain[,-c(1,2)]), 
@@ -78,8 +79,24 @@ xgb<- xgboost(data = data.matrix(modelTrain[,-c(1,2)]),
               nthread = 3
 )
 
-# predict values in test set
-predXgb <- predict(xgb, data.matrix(modelTest[,-c(1,2)]))
+# predict values in validation set
+predXgb <- predict(xgb, data.matrix(modelvali[,-c(1,2)]))
 
 importance_matrix <- xgb.importance(colnames(modelTrain[,-c(1,2)]), model = xgb)
 xgb.plot.importance(importance_matrix[1:10,])
+
+# use the top 10 important variables to train the bst model
+xgb2 <- xgboost(data = data.matrix(dataTrain[,c(3,15,18,4,5,6,10,46,71,82)]), 
+                    label = lableTrain, 
+                    max_depth = 8, 
+                    nround=20, 
+                    eval_metric = ndcg5,
+                    objective = "multi:softprob",
+                    num_class = 12,
+                    nthread = 3
+) 
+# predict values in test set
+predXgb2 <- predict(xgb2, data.matrix(dataTest[,c(3,15,18,4,5,6,10,46,71,82)]))
+
+# write into submit file - "my_solution"
+my_solution <- data.frame(PassengerId = test$PassengerId, Survived = my_prediction)
